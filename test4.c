@@ -76,7 +76,6 @@ double ** get_triplet(char *file_name,int type){
   else{
      triplet = create_triplet(file_row_2);
   }
-  double row,col,value;
   int i=0;
   while (fgets(line,sizeof(line),fp)!=NULL){
     char dst[3][10];
