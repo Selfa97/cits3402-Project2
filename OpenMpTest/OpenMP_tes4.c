@@ -92,8 +92,11 @@ double ** get_triplet(char *file_name,int type){
 }
 
 void multiply(double** A, double** B, double **C,int result_size){
-  double*** local_C = (double***)calloc(NUM_THREADS,sizeof(double**));
-  int** local_identifiers = (int**)calloc(NUM_THREADS,sizeof(int*));
+  int* final_identifiers = (int*)calloc(result_size,sizeof(int));
+  int C_index;
+
+  double*** local_C = (double***)calloc(NUM_THREADS-1,sizeof(double**));
+  int** local_identifiers = (int**)calloc(NUM_THREADS-1,sizeof(int*));
   int* iden_size = (int*)calloc(NUM_THREADS,sizeof(int));
 
   for (int i = 0; i < NUM_THREADS; i++) {
@@ -103,9 +106,9 @@ void multiply(double** A, double** B, double **C,int result_size){
   #pragma omp parallel
   {
     int thr = omp_get_thread_num();
-    local_C[thr] = create_triplet(result_size/(NUM_THREADS-1));
+    local_C[thr-1] = create_triplet(result_size/(NUM_THREADS-1));
     iden_size[thr] = 0;
-    int* identifier = local_identifiers[thr];
+    int* identifier = local_identifiers[thr-1];
     int B_start =0;
     int C_position =-1;
     #pragma omp for schedule(auto)
@@ -120,28 +123,43 @@ void multiply(double** A, double** B, double **C,int result_size){
           // printf("iden_num is %d\n",iden_num);
           bool found_flag = false;
           for (int k=0; k<iden_size[thr];k++){
-            if(identifier[k]==iden_num){
-              // printf("identifier[k] is %d\n",identifier[k]);
-              local_C[thr][k][2]+= A[i][2]*B[j][2];
-              // printf("C[k][2] is %f\n",C[k][2]);
-              found_flag = true;
-              break;
+            if(thr == 0) {
+              if(final_identifiers[k]==iden_num){
+                C[k][2]+= A[i][2]*B[j][2];
+                found_flag = true;
+                break;
+              }
+            } else{
+              if(identifier[k]==iden_num){
+                // printf("identifier[k] is %d\n",identifier[k]);
+                local_C[thr-1][k][2]+= A[i][2]*B[j][2];
+                // printf("C[k][2] is %f\n",C[k][2]);
+                found_flag = true;
+                break;
+              }
             }
           }
           if(found_flag==false){
             C_position++;
             iden_size[thr]++;
-            // printf("C_position is %d\n",C_position);
-            local_C[thr][C_position][0]=A[i][0];
-            // printf("C[C_position][0] is %f\n",C[C_position][0]);
-            local_C[thr][C_position][1]=B[j][1];
-            // printf("C[C_position][1] is %f\n",C[C_position][1]);
-            local_C[thr][C_position][2]=A[i][2]*B[j][2];
-            // printf("C[C_position][2] is %f\n",C[C_position][2]);
-            identifier[iden_size[thr]-1]= iden_num;
-            // printf("identifier[iden_size-1] is %d\n",identifier[iden_size-1]);
-            // printf("i is %d\n",i);
-            // printf("j is %d\n",j);
+            if(thr == 0) {
+              C[C_position][0] = A[i][0];
+              C[C_position][1] = B[j][1];
+              C[C_position][2] = A[i][2]*B[j][2];
+              final_identifiers[iden_size[thr]-1] = iden_num;
+            } else {
+              // printf("C_position is %d\n",C_position);
+              local_C[thr-1][C_position][0]=A[i][0];
+              // printf("C[C_position][0] is %f\n",C[C_position][0]);
+              local_C[thr-1][C_position][1]=B[j][1];
+              // printf("C[C_position][1] is %f\n",C[C_position][1]);
+              local_C[thr-1][C_position][2]=A[i][2]*B[j][2];
+              // printf("C[C_position][2] is %f\n",C[C_position][2]);
+              identifier[iden_size[thr]-1]= iden_num;
+              // printf("identifier[iden_size-1] is %d\n",identifier[iden_size-1]);
+              // printf("i is %d\n",i);
+              // printf("j is %d\n",j);
+            }
           }
         }
         if(A[i][1]<B[j][0]){
@@ -154,36 +172,27 @@ void multiply(double** A, double** B, double **C,int result_size){
         }
       }
     }
+    if(thr == 0) {
+      C_index = C_position;
+    }
   }
 
-  int* final_identifiers = (int*)calloc(result_size,sizeof(int));
-  int C_position = -1;
-
-  for(int i = 0; i < iden_size[0]; i++) {
-    C_position++;
-    C[C_position][0] = local_C[0][i][0];
-    C[C_position][1] = local_C[0][i][1];
-    C[C_position][2] = local_C[0][i][2];
-    final_identifiers[C_position] = local_identifiers[0][i];
-  }
-
-
-  for(int i = 1; i < NUM_THREADS; i++) {
-    for(int j = 0; j < iden_size[i]; j++) {
+  for(int i = 0; i < NUM_THREADS-1; i++) {
+    for(int j = 0; j < iden_size[i+1]; j++) {
       bool found_flag = false;
       #pragma omp parallel for schedule(auto)
-      for(int k = 0; k < C_position+1; k++) {
+      for(int k = 0; k < C_index+1; k++) {
         if(!found_flag && local_identifiers[i][j] == final_identifiers[k]) {
           C[k][2] += local_C[i][j][2];
           found_flag = true;
         }
       }
       if(!found_flag) {
-        C_position++;
-        C[C_position][0] = local_C[i][j][0];
-        C[C_position][1] = local_C[i][j][1];
-        C[C_position][2] = local_C[i][j][2];
-        final_identifiers[C_position] = local_identifiers[i][j];
+        C_index++;
+        C[C_index][0] = local_C[i][j][0];
+        C[C_index][1] = local_C[i][j][1];
+        C[C_index][2] = local_C[i][j][2];
+        final_identifiers[C_index] = local_identifiers[i][j];
       }
     }
   }
