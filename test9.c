@@ -13,6 +13,7 @@
 #define FROM_MASTER 0 /* setting a message type */
 #define FROM_WORKER 1 /* setting a message type */
 #define COL_NUM 3
+#define NUM_THREADS 4
 int file_row_1=0;// The row number of the input file
 int file_row_2=0;
 
@@ -97,40 +98,76 @@ double ** get_triplet(char *file_name,int type){
 }
 
 void multiply(double** A, double** B, double **C,int result_size,int A_rows){
-  int B_start =0;
-  int C_position =-1;
-  int iden_size =0; // identifier's size
-  int * identifier = (int*)calloc(result_size,sizeof(int));
-  for (int i =0; i<A_rows;i++){
-    for (int j=B_start; j<file_row_2;j++){
-      if (A[i][1]==B[j][0]){
-        int iden_num = A[i][0]*10000 + B[j][1];
-        bool found_flag = false;
-        for (int k=0; k<iden_size;k++){
-          if(identifier[k]==iden_num){
-            C[k][2]+= A[i][2]*B[j][2];
-            found_flag = true;
-            break;
-          }
-        }
-        if(found_flag==false){
-          C_position++;
-          iden_size++;
-          C[C_position][0]=A[i][0];
-          C[C_position][1]=B[j][1];
-          C[C_position][2]=A[i][2]*B[j][2];
-          identifier[iden_size-1]= iden_num;
-        }
-      }
-      if(A[i][1]<B[j][0]){
-        if(i!=A_rows-1){
-          if(A[i+1][1]==B[j][0]){
-            B_start = j;
-          }
-        }
-        break;
-      }
+  int C_index;
+  double*** local_C = (double***)calloc(NUM_THREADS-1, sizeof(double**));
+  int* iden_size = (int*)calloc(NUM_THREADS,sizeof(int));
 
+  #pragma omp parallel
+  {
+    int thr = omp_get_thread_num();
+    local_C[thr-1] = create_triplet(result_size/(NUM_THREADS-1));
+    int B_start =0;
+    int C_position =-1;
+    iden_size[thr] =0; // identifier's size
+    int * identifier = (int*)calloc(result_size,sizeof(int));
+    #pragma omp for schedule(auto)
+    for (int i =0; i<A_rows;i++){
+      for (int j=B_start; j<file_row_2;j++){
+        if (A[i][1]==B[j][0]){
+          int iden_num = A[i][0]*10000 + B[j][1];
+          bool found_flag = false;
+          for (int k=0; k<iden_size[thr];k++){
+            if(thr == 0) {
+              if(identifier[k]==iden_num){
+                C[k][2]+= A[i][2]*B[j][2];
+                found_flag = true;
+                break;
+              }
+            } else {
+              if(identifier[k]==iden_num){
+                local_C[thr-1][k][2]+= A[i][2]*B[j][2];
+                found_flag = true;
+                break;
+              }
+            }
+          }
+          if(found_flag==false){
+            C_position++;
+            iden_size[thr]++;
+            identifier[iden_size[thr]-1]= iden_num;
+            if(thr == 0) {
+              C[C_position][0]=A[i][0];
+              C[C_position][1]=B[j][1];
+              C[C_position][2]=A[i][2]*B[j][2];
+            } else {
+              local_C[thr-1][C_position][0]=A[i][0];
+              local_C[thr-1][C_position][1]=B[j][1];
+              local_C[thr-1][C_position][2]=A[i][2]*B[j][2];
+            }
+          }
+        }
+        if(A[i][1]<B[j][0]){
+          if(i!=A_rows-1){
+            if(A[i+1][1]==B[j][0]){
+              B_start = j;
+            }
+          }
+          break;
+        }
+      }
+    }
+    if(thr == 0) {
+      C_index = C_position;
+    }
+  }
+
+  //Merge thread ouputs into larger final output
+  for(int i = 0; i < NUM_THREADS-1; i++) {
+    for(int j = 0; j < iden_size[i+1]; j++) {
+      C_index++;
+      C[C_index][0] = local_C[i][j][0];
+      C[C_index][1] = local_C[i][j][1];
+      C[C_index][2] = local_C[i][j][2];
     }
   }
 }
@@ -180,7 +217,9 @@ int main(int argc, char *argv[]){
 	 i, j, k, rc; /* misc */
 
   MPI_Status status;
- 	MPI_Init(&argc,&argv);
+  int provided_Support;
+ 	MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &provided_Support);
+  omp_set_num_threads(NUM_THREADS);
  	MPI_Comm_rank(MPI_COMM_WORLD,&taskid);
  	MPI_Comm_size(MPI_COMM_WORLD,&numtasks);
  	if (numtasks < 2 ) {
@@ -283,16 +322,14 @@ int main(int argc, char *argv[]){
       }
     }
 
-/*
     for(i=0;i<real_result_size;i++){
       if(real_result[i][0]==0){
         break;
       }
       printf("%.0f    %.0f     %f\n",real_result[i][0],real_result[i][1],real_result[i][2]);
     }
-*/
-    printf("%d\n", iden_size);
-    //file_ouput(real_result,iden_size);
+
+
 
 
 	}
@@ -313,15 +350,7 @@ int main(int argc, char *argv[]){
 
     double** result_temp = create_triplet(rows+file_row_2);
 
-    
-    
-
     multiply(triplet_temp,triplet2,result_temp,rows+file_row_2,rows);
-
-    if(taskid==1){
-      file_ouput(result_temp,rows+file_row_2);
-    }
-    
 
     c_size =0;
     // double* result_send = (double*)calloc((rows+file_row_2)*3,sizeof(double));
