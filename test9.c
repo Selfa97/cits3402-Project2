@@ -170,6 +170,9 @@ void multiply(double** A, double** B, double **C,int result_size,int A_rows){
       C[C_index][2] = local_C[i][j][2];
     }
   }
+
+  //free mem for each thread
+  
 }
 
 void file_ouput(double** result,int result_size){
@@ -322,12 +325,7 @@ int main(int argc, char *argv[]){
       }
     }
 
-    for(i=0;i<real_result_size;i++){
-      if(real_result[i][0]==0){
-        break;
-      }
-      printf("%.0f    %.0f     %f\n",real_result[i][0],real_result[i][1],real_result[i][2]);
-    }
+    file_ouput(real_result, real_result_size);
 
 
 
