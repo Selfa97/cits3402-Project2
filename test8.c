@@ -72,8 +72,6 @@ double ** get_triplet(char *file_name,int type){
     file_row_2--; // get the correct file row number
   }
 
-
-
   fseek(fp,0L,SEEK_SET);
   double ** triplet;
   if(type==1){
@@ -92,7 +90,6 @@ double ** get_triplet(char *file_name,int type){
     triplet[i][2]=atof(dst[2]);
     i++;
   }
-  // printf("%f\n",triplet[0][2]);
   return (triplet);
 }
 
@@ -149,23 +146,13 @@ void file_ouput(double** result,int result_size){
 
 int main(int argc, char *argv[]){
   // Get triplet2
-  // char command1[50] = "sort -k2n -k1n ";
   char command2[50] = "sort -k1n -k2n ";
-  // char suffix1[10] = " > out1";
   char suffix2[10] = " > out2";
-  // strcat(command1,argv[1]);
   strcat(command2,argv[2]);
-  // strcat(command1,suffix1);
   strcat(command2,suffix2);
-  // system(command1);
   system(command2);
-  // double ** triplet1 = get_triplet("out1",1);
   double ** triplet2 = get_triplet("out2",2);
-  // int result_size = file_row_1+file_row_2;
-  // double** result = create_triplet(result_size);
 
-  // double* temp_send = &(triplet2[0][0]);
-  // double* temp_receive = &(triplet2[0][0]);
   /*------MPI part starts---------*/
   int numtasks, /* number of tasks in partition */
 	 taskid, /* a task identifier */
@@ -175,8 +162,8 @@ int main(int argc, char *argv[]){
 	 mtype, /* message type */
 	 rows, /* rows of matrix A sent to each worker */
 	 averow, extra, offset, /* used to determine rows sent to each worker */
-   c_size,
-   c_offset,
+   c_size, /* the size of result triplet in each worker*/
+   c_offset, /* the offset of the big result triplet*/
 	 i, j, k, rc; /* misc */
 
   MPI_Status status;
@@ -190,7 +177,6 @@ int main(int argc, char *argv[]){
  	}
 
   numworkers = numtasks -1;
-
 
   if (taskid == MASTER)
 	{
@@ -208,7 +194,6 @@ int main(int argc, char *argv[]){
     double** big_result = create_triplet(big_result_size);
     double** real_result = create_triplet(real_result_size);
 
-
     printf("file row 1 is %d\n",file_row_1);
     printf("real_result_size is %d\n",real_result_size);
     printf("mpi_mm has started with %d tasks.\n",numtasks);
@@ -225,37 +210,24 @@ int main(int argc, char *argv[]){
 			rows = (dest <= extra) ? averow+1 : averow;
 			printf("Sending %d rows to task %d offset=%d\n",rows,dest,offset);
 			MPI_Send(&offset, 1, MPI_INT, dest,mtype, MPI_COMM_WORLD);
-			// printf("offset done\n");
 			MPI_Send(&rows, 1, MPI_INT, dest,mtype, MPI_COMM_WORLD);
-			// printf("rows done\n");
-      // double* temp_send = &(triplet1[offset][0]);
 			MPI_Send(triplet1[offset], rows*COL_NUM, MPI_DOUBLE,dest, mtype, MPI_COMM_WORLD);
-      // MPI_Send(triplet2[0],file_row_2*COL_NUM)
-			// printf("temp_send done\n");
-			offset = offset + rows;
+      offset = offset + rows;
 		}
 
     /* Receive results from worker tasks*/
     c_offset =0;
     mtype = FROM_WORKER;
     for(i=1;i<numworkers+1;i++){
-      printf("master receive starts\n");
       source =i;
-      // MPI_Recv(&offset,1,MPI_INT,source,mtype,MPI_COMM_WORLD,&status);
-      // printf("master receives offset done\n");
-      // MPI_Recv(&rows,1,MPI_INT,source,mtype,MPI_COMM_WORLD,&status);
-      // printf("master receives rows done\n");
       MPI_Recv(&c_size,1,MPI_INT,source,mtype,MPI_COMM_WORLD,&status);
-      printf("receive c_size done\n");
-
       MPI_Recv(big_result[c_offset],c_size*COL_NUM,MPI_DOUBLE,source,mtype,MPI_COMM_WORLD,&status);
       c_offset += c_size;
       printf("Received results from task %d\n",source);
 
     }
 
-
-    /*Merge part begins*/
+    /*Final merge part begins*/
     int iden_size =0;
     int *identifier = (int*)calloc(real_result_size,sizeof(int));
     int iden_num;
@@ -302,14 +274,9 @@ int main(int argc, char *argv[]){
 	{
 		mtype = FROM_MASTER;
 		MPI_Recv(&offset, 1, MPI_INT, MASTER, mtype,MPI_COMM_WORLD, &status);
-    // printf("receive offset done\n");
 		MPI_Recv(&rows, 1, MPI_INT, MASTER,mtype, MPI_COMM_WORLD, &status);
-    // printf("receive rows done\n");
     double**triplet_temp = create_triplet(rows);
-    double* temp_receive = &(triplet_temp[0][0]);
-    MPI_Recv(temp_receive, rows*COL_NUM, MPI_DOUBLE, MASTER,mtype, MPI_COMM_WORLD, &status);
-    // printf("receive temp done\n");
-
+    MPI_Recv(triplet_temp[0], rows*COL_NUM, MPI_DOUBLE, MASTER,mtype, MPI_COMM_WORLD, &status);
 
     double** result_temp = create_triplet(rows+file_row_2);
 
@@ -324,7 +291,6 @@ int main(int argc, char *argv[]){
     
 
     c_size =0;
-    // double* result_send = (double*)calloc((rows+file_row_2)*3,sizeof(double));
     for (i=0;i<rows+file_row_2;i++){
       if(result_temp[i][0]==0){
         break;
@@ -335,14 +301,8 @@ int main(int argc, char *argv[]){
 
     /* Send Results to the master */
     mtype = FROM_WORKER;
-    // MPI_Send(&offset,1,MPI_INT,MASTER,mtype,MPI_COMM_WORLD);
-    // printf("worker sends offset done\n");
-    // MPI_Send(&rows,1,MPI_INT,MASTER,mtype,MPI_COMM_WORLD);
-    // printf("worker sends rows done\n");
     MPI_Send(&c_size,1,MPI_INT,MASTER,mtype,MPI_COMM_WORLD);
-    printf("worker sends c_size done\n");
     MPI_Send(result_temp[0],c_size*COL_NUM, MPI_DOUBLE,MASTER, mtype, MPI_COMM_WORLD);
-    printf("worker sends result_send done\n");
 	}
 
   MPI_Finalize();
