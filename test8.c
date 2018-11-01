@@ -176,6 +176,7 @@ int main(int argc, char *argv[]){
 	 rows, /* rows of matrix A sent to each worker */
 	 averow, extra, offset, /* used to determine rows sent to each worker */
    c_size,
+   c_offset,
 	 i, j, k, rc; /* misc */
 
   MPI_Status status;
@@ -235,23 +236,62 @@ int main(int argc, char *argv[]){
 		}
 
     /* Receive results from worker tasks*/
+    c_offset =0;
     mtype = FROM_WORKER;
     for(i=1;i<numworkers+1;i++){
       printf("master receive starts\n");
       source =i;
-      MPI_Recv(&offset,1,MPI_INT,source,mtype,MPI_COMM_WORLD,&status);
-      printf("master receives offset done\n");
-      MPI_Recv(&rows,1,MPI_INT,source,mtype,MPI_COMM_WORLD,&status);
-      printf("master receives rows done\n");
+      // MPI_Recv(&offset,1,MPI_INT,source,mtype,MPI_COMM_WORLD,&status);
+      // printf("master receives offset done\n");
+      // MPI_Recv(&rows,1,MPI_INT,source,mtype,MPI_COMM_WORLD,&status);
+      // printf("master receives rows done\n");
       MPI_Recv(&c_size,1,MPI_INT,source,mtype,MPI_COMM_WORLD,&status);
       printf("receive c_size done\n");
-      double * temp_receive = &(big_result[0][0]);
-      MPI_Recv(temp_receive,c_size*COL_NUM,MPI_DOUBLE,source,mtype,MPI_COMM_WORLD,&status);
+
+      MPI_Recv(big_result[c_offset],c_size*COL_NUM,MPI_DOUBLE,source,mtype,MPI_COMM_WORLD,&status);
+      c_offset += c_size;
       printf("Received results from task %d\n",source);
-      // for (i=0;i<c_size;i++){
-      //   printf("%.0f    %.0f    %f\n",result[i][0],result[i][1],result[i][2]);
-      // }
+
     }
+
+
+    /*Merge part begins*/
+    int iden_size =0;
+    int *identifier = (int*)calloc(real_result_size,sizeof(int));
+    int iden_num;
+    int c_position = -1;
+    for (i=0;i<big_result_size;i++){
+      if(big_result[i][0]==0){
+        break;
+      }
+      iden_num = big_result[i][0]*10000 + big_result[i][1];
+      bool found_flag = false;
+      for(k=0;k<iden_size;k++){
+        if(identifier[k]==iden_num){
+          real_result[k][2]+= big_result[i][2];
+          found_flag = true;
+          break;
+        }
+      }
+      if(found_flag==false){
+        c_position++;
+        iden_size++;
+        real_result[c_position][0] = big_result[i][0];
+        real_result[c_position][1] = big_result[i][1];
+        real_result[c_position][2] = big_result[i][2];
+        identifier[iden_size-1] = iden_num;
+      }
+    }
+
+    for(i=0;i<real_result_size;i++){
+      if(real_result[i][0]==0){
+        break;
+      }
+      printf("%.0f    %.0f     %f\n",real_result[i][0],real_result[i][1],real_result[i][2]);
+    }
+
+
+
 
 	}
 
@@ -274,31 +314,24 @@ int main(int argc, char *argv[]){
     multiply(triplet_temp,triplet2,result_temp,rows+file_row_2,rows);
 
     c_size =0;
-    double* result_send = (double*)calloc((rows+file_row_2)*3,sizeof(double));
+    // double* result_send = (double*)calloc((rows+file_row_2)*3,sizeof(double));
     for (i=0;i<rows+file_row_2;i++){
       if(result_temp[i][0]==0){
         break;
       }
-      result_send[3*i] = result_temp[i][0];
-      result_send[3*i+1] = result_temp[i][1];
-      result_send[3*i+2] = result_temp[i][2];
       c_size++;
     }
     printf("c_size is %d\n",c_size);
 
-    // for (i=0;i<rows+file_row_2;i++){
-    //   printf("%.0f    %.0f    %f\n",result_temp[i][0],result_temp[i][1],result_temp[i][2]);
-    // }
-
     /* Send Results to the master */
     mtype = FROM_WORKER;
-    MPI_Send(&offset,1,MPI_INT,MASTER,mtype,MPI_COMM_WORLD);
-    printf("worker sends offset done\n");
-    MPI_Send(&rows,1,MPI_INT,MASTER,mtype,MPI_COMM_WORLD);
-    printf("worker sends rows done\n");
+    // MPI_Send(&offset,1,MPI_INT,MASTER,mtype,MPI_COMM_WORLD);
+    // printf("worker sends offset done\n");
+    // MPI_Send(&rows,1,MPI_INT,MASTER,mtype,MPI_COMM_WORLD);
+    // printf("worker sends rows done\n");
     MPI_Send(&c_size,1,MPI_INT,MASTER,mtype,MPI_COMM_WORLD);
     printf("worker sends c_size done\n");
-    MPI_Send(result_send,c_size*COL_NUM, MPI_DOUBLE,MASTER, mtype, MPI_COMM_WORLD);
+    MPI_Send(result_temp[0],c_size*COL_NUM, MPI_DOUBLE,MASTER, mtype, MPI_COMM_WORLD);
     printf("worker sends result_send done\n");
 	}
 
