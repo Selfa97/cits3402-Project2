@@ -7,10 +7,11 @@
 #include <time.h>
 #include <stdbool.h>
 
-// Global variables
+// Define global variables
+#define COL_NUM 3
 int file_row_1=0;// The row number of the input file
 int file_row_2=0;
-int size =0; // matrix size
+
 
 // Split each line and store the result in a matrix
 void split(char dst[][10], char* str, const char* spl){
@@ -27,8 +28,9 @@ void split(char dst[][10], char* str, const char* spl){
 double ** create_triplet(int triplet_size){
   double ** triplet;
   triplet = (double**)calloc(triplet_size,sizeof(double*));
-  for (int i=0;i<triplet_size;i++){
-    triplet[i] = (double*)calloc(3,sizeof(double));
+  triplet[0] = (double*)calloc(triplet_size*COL_NUM,sizeof(double));
+  for(int i=1;i<triplet_size;i++){
+    triplet[i]=triplet[0]+i*COL_NUM;
   }
   if(triplet==NULL){
     printf("Not enough memory!\n");
@@ -65,9 +67,6 @@ double ** get_triplet(char *file_name,int type){
     }
     file_row_2--; // get the correct file row number
   }
-
-  size =atoi(strtok(last_line," "));
-
   fseek(fp,0L,SEEK_SET);
   double ** triplet;
   if(type==1){
@@ -76,39 +75,33 @@ double ** get_triplet(char *file_name,int type){
   else{
      triplet = create_triplet(file_row_2);
   }
+  double row,col,value;
   int i=0;
   while (fgets(line,sizeof(line),fp)!=NULL){
-    char dst[3][10];
+    char dst[COL_NUM][10];
     split(dst,line," ");
     triplet[i][0]=atof(dst[0]);
     triplet[i][1]=atof(dst[1]);
     triplet[i][2]=atof(dst[2]);
     i++;
   }
-  // printf("%f\n",triplet[0][2]);
   return (triplet);
 }
 
-void multiply(double** A, double** B, double **C,int result_size){
+// Do the sparse matrix multiplication
+void multiply(double** A, double** B, double **C,int result_size,int A_rows){
   int B_start =0;
   int C_position =-1;
   int iden_size =0; // identifier's size
   int * identifier = (int*)calloc(result_size,sizeof(int));
-  for (int i =0; i<file_row_1;i++){
+  for (int i =0; i<A_rows;i++){
     for (int j=B_start; j<file_row_2;j++){
       if (A[i][1]==B[j][0]){
         int iden_num = A[i][0]*10000 + B[j][1];
-        // printf("A[i][0] is %f\n",A[i][0]);
-        // printf("A[i][1] is %f\n",A[i][1]);
-        // printf("B[j][0] is %f\n",B[j][0]);
-        // printf("B[j][1] is %f\n",B[j][1]);
-        // printf("iden_num is %d\n",iden_num);
         bool found_flag = false;
         for (int k=0; k<iden_size;k++){
           if(identifier[k]==iden_num){
-            // printf("identifier[k] is %d\n",identifier[k]);
             C[k][2]+= A[i][2]*B[j][2];
-            // printf("C[k][2] is %f\n",C[k][2]);
             found_flag = true;
             break;
           }
@@ -116,17 +109,10 @@ void multiply(double** A, double** B, double **C,int result_size){
         if(found_flag==false){
           C_position++;
           iden_size++;
-          // printf("C_position is %d\n",C_position);
           C[C_position][0]=A[i][0];
-          // printf("C[C_position][0] is %f\n",C[C_position][0]);
           C[C_position][1]=B[j][1];
-          // printf("C[C_position][1] is %f\n",C[C_position][1]);
           C[C_position][2]=A[i][2]*B[j][2];
-          // printf("C[C_position][2] is %f\n",C[C_position][2]);
           identifier[iden_size-1]= iden_num;
-          // printf("identifier[iden_size-1] is %d\n",identifier[iden_size-1]);
-          // printf("i is %d\n",i);
-          // printf("j is %d\n",j);
         }
       }
       if(A[i][1]<B[j][0]){
@@ -142,8 +128,8 @@ void multiply(double** A, double** B, double **C,int result_size){
   }
 }
 
-void file_ouput(double** result,int result_size){
-  FILE* fp = fopen("output","w+");
+void file_ouput(double** result,int result_size,char* output_file_name){
+  FILE* fp = fopen(output_file_name,"w+");
   for (int i=0;i<result_size;i++){
     if(result[i][0]==0){
       break;
@@ -154,8 +140,8 @@ void file_ouput(double** result,int result_size){
   }
 }
 
-
 int main(int argc, char *argv[]){
+  /* Sort the input file and save the result to triplets*/
   char command1[50] = "sort -k2n -k1n ";
   char command2[50] = "sort -k1n -k2n ";
   char suffix1[10] = " > out1";
@@ -168,17 +154,14 @@ int main(int argc, char *argv[]){
   system(command2);
   double ** triplet1 = get_triplet("out1",1);
   double ** triplet2 = get_triplet("out2",2);
-  // int result_size = (file_row_1>file_row_2)?file_row_1:file_row_2;
+
+  /* Execute the multiplication*/
   int result_size = file_row_1+file_row_2;
   double** result = create_triplet(result_size);
-  // printf("%d   %d\n",file_row_1,file_row_2);
-  // printf("result size is %d\n",result_size);
-
   double begin=omp_get_wtime();
-  multiply(triplet1,triplet2,result,result_size);
+  multiply(triplet1,triplet2,result,result_size,file_row_1);
   double end = omp_get_wtime();
-  printf("now time =%f\n",(double)(end - begin));
-  file_ouput(result,result_size);
-
+  printf("now time =%f seconds\n",(double)(end - begin));
+  file_ouput(result,result_size,"output_sequential");
   return 0;
 }
