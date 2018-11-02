@@ -98,7 +98,7 @@ void multiply(double** A, double** B, double **C,int result_size,int A_rows){
   int C_position =0;
   int iden_size =0; // identifier's size
   int * identifier = (int*)calloc(result_size,sizeof(int));
-  #pragma omp parallel for shared(C) NUM_THREADS(4) firstprivate(B_start,identifier,iden_size) reduction(+:C_position)
+  #pragma omp NUM_THREADS(4) parallel for shared(C) firstprivate(B_start,identifier,iden_size) reduction(+:C_position)
   for (int i =0; i<A_rows;i++){
     for (int j=B_start; j<file_row_2;j++){
       if (A[i][1]==B[j][0]){
