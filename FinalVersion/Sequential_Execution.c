@@ -142,6 +142,7 @@ void file_ouput(double** result,int result_size,char* output_file_name){
 }
 
 int main(int argc, char *argv[]){
+  //Sort the input files
   char command1[50] = "sort -k2n -k1n ";
   char command2[50] = "sort -k1n -k2n ";
   char suffix1[10] = " > out1";
@@ -152,8 +153,11 @@ int main(int argc, char *argv[]){
   strcat(command2,suffix2);
   system(command1);
   system(command2);
+
+  // Get content from input files
   double ** triplet1 = get_triplet("out1",1);
   double ** triplet2 = get_triplet("out2",2);
+  
   int result_size = file_row_1+file_row_2;
   double** result = create_triplet(result_size);
 

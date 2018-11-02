@@ -93,12 +93,13 @@ double ** get_triplet(char *file_name,int type){
   return (triplet);
 }
 
+// Execute the multiplication of sparse matrix A and B, save the result into sparse matrix C
 void multiply(double** A, double** B, double **C,int result_size,int A_rows){
   int B_start =0;
   int C_position =0;
   int iden_size =0; // identifier's size
   int * identifier = (int*)calloc(result_size,sizeof(int));
-  #pragma omp NUM_THREADS(4) parallel for shared(C) firstprivate(B_start,identifier,iden_size) reduction(+:C_position)
+  #pragma omp parallel for shared(C) NUM_THREADS(4) firstprivate(B_start,identifier,iden_size) reduction(+:C_position)
   for (int i =0; i<A_rows;i++){
     for (int j=B_start; j<file_row_2;j++){
       if (A[i][1]==B[j][0]){
@@ -133,6 +134,7 @@ void multiply(double** A, double** B, double **C,int result_size,int A_rows){
   }
 }
 
+//Print the result sparse matrix to a text file named "output"
 void file_ouput(double** result,int result_size){
   FILE* fp = fopen("output","w+");
   for (int i=0;i<result_size;i++){
@@ -168,6 +170,8 @@ int main(int argc, char *argv[]){
 	 i, j, k, rc; /* misc */
 
   MPI_Status status;
+  MPI_Request reqs[2];
+
  	MPI_Init(&argc,&argv);
  	MPI_Comm_rank(MPI_COMM_WORLD,&taskid);
  	MPI_Comm_size(MPI_COMM_WORLD,&numtasks);
@@ -212,7 +216,7 @@ int main(int argc, char *argv[]){
 			printf("Sending %d rows to task %d offset=%d\n",rows,dest,offset);
 			MPI_Send(&offset, 1, MPI_INT, dest,mtype, MPI_COMM_WORLD);
 			MPI_Send(&rows, 1, MPI_INT, dest,mtype, MPI_COMM_WORLD);
-			MPI_Send(triplet1[offset], rows*COL_NUM, MPI_DOUBLE,dest, mtype, MPI_COMM_WORLD);
+			MPI_Isend(triplet1[offset], rows*COL_NUM, MPI_DOUBLE,dest, mtype, MPI_COMM_WORLD,&reqs[1]);
       offset = offset + rows;
 		}
 
@@ -222,7 +226,7 @@ int main(int argc, char *argv[]){
     for(i=1;i<numworkers+1;i++){
       source =i;
       MPI_Recv(&c_size,1,MPI_INT,source,mtype,MPI_COMM_WORLD,&status);
-      MPI_Recv(big_result[c_offset],c_size*COL_NUM,MPI_DOUBLE,source,mtype,MPI_COMM_WORLD,&status);
+      MPI_Irecv(big_result[c_offset],c_size*COL_NUM,MPI_DOUBLE,source,mtype,MPI_COMM_WORLD,&reqs[0]);
       c_offset += c_size;
       printf("Received results from task %d\n",source);
 
@@ -258,7 +262,7 @@ int main(int argc, char *argv[]){
     // Print the result to a file
     file_ouput(real_result,iden_size);
     double end = MPI_Wtime();
-    printf("The MPI and OpenMP time is %f s\n",end-start);
+    printf("The MPI and OpenMP time is %f\n",end-start);
 	}
 
   /**************************** worker task ************************************/
@@ -268,7 +272,7 @@ int main(int argc, char *argv[]){
 		MPI_Recv(&offset, 1, MPI_INT, MASTER, mtype,MPI_COMM_WORLD, &status);
 		MPI_Recv(&rows, 1, MPI_INT, MASTER,mtype, MPI_COMM_WORLD, &status);
     double**triplet_temp = create_triplet(rows);
-    MPI_Recv(triplet_temp[0], rows*COL_NUM, MPI_DOUBLE, MASTER,mtype, MPI_COMM_WORLD, &status);
+    MPI_Irecv(triplet_temp[0], rows*COL_NUM, MPI_DOUBLE, MASTER,mtype, MPI_COMM_WORLD, &reqs[0]);
 
     double** result_temp = create_triplet(rows+file_row_2);
     multiply(triplet_temp,triplet2,result_temp,rows+file_row_2,rows);
@@ -280,12 +284,11 @@ int main(int argc, char *argv[]){
       }
       c_size++;
     }
-    printf("c_size is %d  TASKID: %d\n",c_size,taskid);
 
     /* Send Results to the master */
     mtype = FROM_WORKER;
     MPI_Send(&c_size,1,MPI_INT,MASTER,mtype,MPI_COMM_WORLD);
-    MPI_Send(result_temp[0],c_size*COL_NUM, MPI_DOUBLE,MASTER, mtype, MPI_COMM_WORLD);
+    MPI_Isend(result_temp[0],c_size*COL_NUM, MPI_DOUBLE,MASTER, mtype, MPI_COMM_WORLD,&reqs[1]);
 	}
 
   MPI_Finalize();
