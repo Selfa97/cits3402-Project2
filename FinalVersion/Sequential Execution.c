@@ -159,8 +159,8 @@ int main(int argc, char *argv[]){
 
   double begin=omp_get_wtime();
   multiply(triplet1,triplet2,result,result_size,file_row_1);
+  file_ouput(result,result_size,"output_sequential");
   double end = omp_get_wtime();
   printf("now time =%f seconds\n",(double)(end - begin));
-  file_ouput(result,result_size,"output_sequential");
   return 0;
 }

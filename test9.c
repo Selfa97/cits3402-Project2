@@ -172,7 +172,7 @@ void multiply(double** A, double** B, double **C,int result_size,int A_rows){
   }
 
   //free mem for each thread
-  
+
 }
 
 void file_ouput(double** result,int result_size){
@@ -324,7 +324,7 @@ int main(int argc, char *argv[]){
         identifier[iden_size-1] = iden_num;
       }
     }
-
+    printf("iden_size is %d\n",iden_size);
     file_ouput(real_result, real_result_size);
 
 

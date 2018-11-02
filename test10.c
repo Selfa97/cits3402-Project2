@@ -98,56 +98,45 @@ double ** get_triplet(char *file_name,int type){
 }
 
 void multiply(double** A, double** B, double **C,int result_size,int A_rows){
+  int B_start =0;
   int C_position =0;
-  #pragma omp parallel shared(C) reduction(+:C_position)
-  {
-    int B_start =0;
-    int iden_size = 0;
-    int * identifier = (int*)calloc(result_size/(NUM_THREADS-1),sizeof(int));
-    #pragma omp for
-    for (int i =0; i<A_rows;i++){
-      for (int j=B_start; j<file_row_2;j++){
-        if (A[i][1]==B[j][0]){
-          int iden_num = A[i][0]*10000 + B[j][1];
-          bool found_flag = false;
-          for (int k=0; k<iden_size;k++){
-            if(identifier[k]==iden_num){
-              C[k][2]+= A[i][2]*B[j][2];
-              found_flag = true;
-              break;
-            }
-          }
-          if(found_flag==false){
-            C_position++;
-            iden_size++;
-            identifier[iden_size-1]= iden_num;
-            C[C_position][0]=A[i][0];
-            C[C_position][1]=B[j][1];
-            C[C_position][2]=A[i][2]*B[j][2];
+  int iden_size =0; // identifier's size
+  int * identifier = (int*)calloc(result_size,sizeof(int));
+  #pragma omp parallel for shared(C) NUM_THREADS(4) firstprivate(B_start,identifier,iden_size) reduction(+:C_position)
+  for (int i =0; i<A_rows;i++){
+    for (int j=B_start; j<file_row_2;j++){
+      if (A[i][1]==B[j][0]){
+        int iden_num = A[i][0]*10000 + B[j][1];
+        bool found_flag = false;
+        for (int k=0; k<iden_size;k++){
+          if(identifier[k]==iden_num){
+            C[k][2]+= A[i][2]*B[j][2];
+            found_flag = true;
+            break;
           }
         }
-        if(A[i][1]<B[j][0]){
-          if(i!=A_rows-1){
-            if(A[i+1][1]==B[j][0]){
-              B_start = j;
-            }
-          }
-          break;
+        if(found_flag==false){
+          C_position++;
+          iden_size++;
+          C[C_position-1][0]=A[i][0];
+          C[C_position-1][1]=B[j][1];
+          C[C_position-1][2]=A[i][2]*B[j][2];
+          identifier[iden_size-1]= iden_num;
         }
       }
-    }
-    //free local thread calloc
-    free(identifier);
-  }
+      if(A[i][1]<B[j][0]){
+        if(i!=A_rows-1){
+          if(A[i+1][1]==B[j][0]){
+            B_start = j;
+          }
+        }
+        break;
+      }
 
-  for(int i = 0; i < result_size; i++) {
-    if(C[i][0] == 0) {
-      break;
     }
-    printf("%.0f    %.0f    %f\n", C[i][0], C[i][1], C[i][2]);
   }
-
 }
+
 
 void file_ouput(double** result,int result_size){
   FILE* fp = fopen("output","w+");
@@ -196,7 +185,7 @@ int main(int argc, char *argv[]){
   MPI_Status status;
   int provided_Support;
  	MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &provided_Support);
-  omp_set_num_threads(NUM_THREADS);
+  //omp_set_num_threads(NUM_THREADS);
  	MPI_Comm_rank(MPI_COMM_WORLD,&taskid);
  	MPI_Comm_size(MPI_COMM_WORLD,&numtasks);
  	if (numtasks < 2 ) {
@@ -336,10 +325,6 @@ int main(int argc, char *argv[]){
 
     /* Send Results to the master */
     mtype = FROM_WORKER;
-    // MPI_Send(&offset,1,MPI_INT,MASTER,mtype,MPI_COMM_WORLD);
-    // printf("worker sends offset done\n");
-    // MPI_Send(&rows,1,MPI_INT,MASTER,mtype,MPI_COMM_WORLD);
-    // printf("worker sends rows done\n");
     MPI_Send(&c_size,1,MPI_INT,MASTER,mtype,MPI_COMM_WORLD);
     printf("worker sends c_size done\n");
     MPI_Send(result_temp[0],c_size*COL_NUM, MPI_DOUBLE,MASTER, mtype, MPI_COMM_WORLD);

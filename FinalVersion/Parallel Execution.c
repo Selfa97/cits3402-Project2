@@ -258,7 +258,7 @@ int main(int argc, char *argv[]){
     // Print the result to a file
     file_ouput(real_result,iden_size);
     double end = MPI_Wtime();
-    printf("The MPI and OpenMP time is %f\n",end-start);
+    printf("The MPI and OpenMP time is %f s\n",end-start);
 	}
 
   /**************************** worker task ************************************/
